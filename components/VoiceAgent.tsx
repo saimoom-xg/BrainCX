@@ -1,56 +1,232 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Vapi from '@vapi-ai/web';
 import { publicConfig } from '@/lib/config';
 
 type CallState = 'idle' | 'connecting' | 'listening' | 'speaking' | 'ended' | 'error';
 
-const statusCopy: Record<CallState, string> = { idle: 'Talk to BrainCX', connecting: 'Connecting...', listening: 'Listening...', speaking: 'BrainCX is speaking...', ended: 'Conversation ended', error: 'Something went wrong. Please try again.' };
+const STATUS_TEXT: Record<CallState, string> = {
+  idle: 'Tap to talk',
+  connecting: 'Connecting',
+  listening: 'Listening',
+  speaking: 'BrainCX is speaking',
+  ended: 'Conversation ended',
+  error: 'Something went wrong',
+};
+
+/** Mic icon */
+function MicIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="22" />
+    </svg>
+  );
+}
+
+/** Stop / square icon */
+function StopIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
+  );
+}
+
+/** Waveform bars for speaking state */
+function WaveformIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <line x1="4" y1="8" x2="4" y2="16" style={{ animation: 'wave-bar 0.8s ease-in-out infinite' }} />
+      <line x1="8" y1="5" x2="8" y2="19" style={{ animation: 'wave-bar 0.8s ease-in-out infinite 0.1s' }} />
+      <line x1="12" y1="3" x2="12" y2="21" style={{ animation: 'wave-bar 0.8s ease-in-out infinite 0.2s' }} />
+      <line x1="16" y1="5" x2="16" y2="19" style={{ animation: 'wave-bar 0.8s ease-in-out infinite 0.3s' }} />
+      <line x1="20" y1="8" x2="20" y2="16" style={{ animation: 'wave-bar 0.8s ease-in-out infinite 0.4s' }} />
+    </svg>
+  );
+}
+
+function getOrbIcon(state: CallState) {
+  switch (state) {
+    case 'connecting':
+    case 'listening':
+      return <MicIcon />;
+    case 'speaking':
+      return <WaveformIcon />;
+    default:
+      return <MicIcon />;
+  }
+}
 
 export function VoiceAgent() {
-  const vapi = useRef<Vapi | null>(null);
+  const vapiRef = useRef<Vapi | null>(null);
   const [state, setState] = useState<CallState>('idle');
   const [error, setError] = useState('');
+  const [showRipple, setShowRipple] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => () => { vapi.current?.stop(); }, []);
+  const active = state === 'connecting' || state === 'listening' || state === 'speaking';
 
-  const start = async () => {
-    if (state === 'connecting' || state === 'listening' || state === 'speaking') return;
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      vapiRef.current?.stop();
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  // Timer for call duration
+  useEffect(() => {
+    if (active) {
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [active]);
+
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  const start = useCallback(async () => {
+    if (active) return;
     setError('');
+
     if (!publicConfig.vapiPublicKey || !publicConfig.vapiAssistantId) {
       setState('error');
-      setError('Voice setup is not complete. Add the Vapi public key and assistant ID to your environment.');
+      setError('Voice setup incomplete. Add Vapi keys to your environment.');
       return;
     }
+
+    // ── Mobile fix: request mic permission explicitly from user gesture ──
     try {
-      const client = vapi.current ?? new Vapi(publicConfig.vapiPublicKey);
-      vapi.current = client;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Release immediately — Vapi will request its own stream
+      stream.getTracks().forEach((t) => t.stop());
+    } catch (err: unknown) {
+      setState('error');
+      if (err instanceof DOMException) {
+        if (err.name === 'NotAllowedError') {
+          setError('Microphone permission denied. Please allow mic access and try again.');
+        } else if (err.name === 'NotFoundError') {
+          setError('No microphone found on this device.');
+        } else {
+          setError(`Microphone error: ${err.message}`);
+        }
+      } else {
+        setError('Could not access microphone. Please check permissions.');
+      }
+      return;
+    }
+
+    // Ripple animation
+    setShowRipple(true);
+    setTimeout(() => setShowRipple(false), 800);
+
+    try {
+      const client = vapiRef.current ?? new Vapi(publicConfig.vapiPublicKey);
+      vapiRef.current = client;
+
+      // Remove old listeners to avoid stacking on re-calls
+      client.removeAllListeners();
+
       client.on('call-start', () => setState('listening'));
       client.on('call-end', () => setState('ended'));
       client.on('speech-start', () => setState('speaking'));
       client.on('speech-end', () => setState('listening'));
-      client.on('error', () => { setState('error'); setError('The voice connection was interrupted. Please try again.'); });
+      client.on('error', () => {
+        setState('error');
+        setError('Voice connection interrupted. Tap to try again.');
+      });
+
       setState('connecting');
       await client.start(publicConfig.vapiAssistantId);
     } catch {
       setState('error');
-      setError('We could not access the voice agent. Check microphone permission and try again.');
+      setError('Could not start voice session. Please try again.');
+    }
+  }, [active]);
+
+  const end = useCallback(() => {
+    vapiRef.current?.stop();
+    setState('ended');
+  }, []);
+
+  const handleClick = () => {
+    if (active) {
+      end();
+    } else {
+      start();
     }
   };
 
-  const end = () => { vapi.current?.stop(); setState('ended'); };
-  const active = state === 'connecting' || state === 'listening' || state === 'speaking';
+  return (
+    <div className="flex flex-col items-center gap-10">
+      {/* Orb */}
+      <div className={`orb-wrapper orb-${state}`}>
+        <div className="orb-ring orb-ring-outer" />
+        <div className="orb-ring" />
+        <div className="orb-ring orb-ring-inner" />
 
-  return <div className="mt-12 flex flex-col items-start gap-5">
-    <div className="flex flex-wrap items-center gap-4">
-      <button type="button" onClick={active ? end : start} aria-label={active ? 'End BrainCX conversation' : 'Start BrainCX conversation'} className={`group inline-flex items-center gap-3 rounded-full px-6 py-4 font-display text-base font-bold transition focus:outline-none focus:ring-4 focus:ring-[#0a8f54]/25 ${active ? 'bg-ink text-paper' : 'bg-[#0a8f54] text-white hover:bg-[#087444]'}`}>
-        <span className={`flex h-3 w-3 rounded-full bg-current ${active ? 'animate-pulse' : ''}`} />
-        {active ? 'End conversation' : statusCopy[state]}
-      </button>
-      {active && <span role="status" className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink/55">{statusCopy[state]}</span>}
+        {showRipple && <div className="orb-ripple" />}
+
+        <button
+          type="button"
+          className="orb-core"
+          onClick={handleClick}
+          aria-label={active ? 'End conversation' : 'Start conversation'}
+        >
+          <div className="orb-icon" style={{ color: active ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)' }}>
+            {active ? <StopIcon /> : getOrbIcon(state)}
+          </div>
+        </button>
+      </div>
+
+      {/* Status pill */}
+      <div className={`status-pill is-${state}`}>
+        <span className="status-dot" />
+        <span className="font-display tracking-widest">
+          {STATUS_TEXT[state]}
+        </span>
+        {active && (
+          <span className="ml-1 tabular-nums text-[11px] opacity-60">
+            {formatTime(elapsed)}
+          </span>
+        )}
+      </div>
+
+      {/* Error message */}
+      {error && (
+        <p className="animate-fade-in-up max-w-xs text-center text-sm leading-6 text-red-400/80">
+          {error}
+        </p>
+      )}
+
+      {/* Ended message */}
+      {state === 'ended' && !error && (
+        <p className="animate-fade-in-up text-center text-sm text-muted">
+          Tap the orb to start a new conversation.
+        </p>
+      )}
+
+      {/* Idle helper text */}
+      {state === 'idle' && (
+        <p className="max-w-[240px] text-center text-xs leading-5 text-subtle">
+          Your browser will ask for microphone access.
+        </p>
+      )}
     </div>
-    {(error || state === 'ended') && <p role="status" className={`max-w-lg text-sm ${error ? 'text-[#a43b2e]' : 'text-ink/55'}`}>{error || statusCopy[state]}</p>}
-    <p className="max-w-sm text-xs leading-5 text-ink/45">Your browser will ask for microphone access. This demo uses a live voice connection and real calendar data when configured.</p>
-  </div>;
+  );
 }

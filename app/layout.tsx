@@ -1,12 +1,24 @@
-import type { Metadata } from 'next';
-import { DM_Sans, Space_Grotesk } from 'next/font/google';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
-const dmSans = DM_Sans({ subsets: ['latin'], variable: '--font-dm-sans' });
-const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-space-grotesk' });
+export const metadata: Metadata = {
+  title: 'BrainCX | Voice Agent',
+  description: 'Talk with BrainCX — AI-powered voice customer experience.',
+};
 
-export const metadata: Metadata = { title: 'BrainCX | AI CX Operator', description: 'Talk with BrainCX about customer conversations.' };
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body className={`${dmSans.variable} ${spaceGrotesk.variable}`}>{children}</body></html>;
+  return (
+    <html lang="en">
+      <body className="antialiased">
+        {children}
+      </body>
+    </html>
+  );
 }
