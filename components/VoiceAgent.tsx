@@ -153,60 +153,14 @@ export function VoiceAgent() {
 
       setState('connecting');
 
-      // Build assistant overrides — tell Vapi where to send tool calls
+      // Tell Vapi where to send tool calls
       const siteUrl = publicConfig.siteUrl || window.location.origin;
       const serverEndpoint = `${siteUrl}/api/vapi/server-url`;
 
-      const assistantOverrides: Record<string, unknown> = {
-        // Assistant-level server URL (both formats for compatibility)
+      await client.start(publicConfig.vapiAssistantId, {
         serverUrl: serverEndpoint,
         server: { url: serverEndpoint },
-        // Override tools with explicit server URLs so dashboard config is overridden
-        model: {
-          tools: [
-            {
-              type: 'function',
-              function: {
-                name: 'check_calendar_availability',
-                description: 'Check live Google Calendar availability through the calendar integration.',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    date: { type: 'string', description: 'Meeting date in YYYY-MM-DD format.' },
-                    start_time: { type: 'string', description: 'Requested range start in HH:mm.' },
-                    end_time: { type: 'string', description: 'Requested range end in HH:mm.' },
-                    timezone: { type: 'string', description: 'IANA timezone identifier.' },
-                  },
-                  required: ['date', 'start_time', 'end_time', 'timezone'],
-                },
-              },
-              server: { url: serverEndpoint },
-            },
-            {
-              type: 'function',
-              function: {
-                name: 'create_calendar_booking',
-                description: 'Create a Google Calendar meeting after the visitor confirms all details.',
-                parameters: {
-                  type: 'object',
-                  properties: {
-                    name: { type: 'string', description: 'Visitor full name.' },
-                    email: { type: 'string', description: 'Visitor email address.' },
-                    date: { type: 'string', description: 'Meeting date in YYYY-MM-DD format.' },
-                    start_time: { type: 'string', description: 'Slot start in HH:mm.' },
-                    end_time: { type: 'string', description: 'Slot end in HH:mm.' },
-                    timezone: { type: 'string', description: 'IANA timezone identifier.' },
-                  },
-                  required: ['name', 'email', 'date', 'start_time', 'end_time', 'timezone'],
-                },
-              },
-              server: { url: serverEndpoint },
-            },
-          ],
-        },
-      };
-
-      await client.start(publicConfig.vapiAssistantId, assistantOverrides);
+      });
     } catch {
       setState('error');
       setError('Could not start voice session. Please try again.');
