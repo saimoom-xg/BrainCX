@@ -5,12 +5,12 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        surface: '#0a0a0a',
-        'surface-raised': '#111111',
-        ink: '#fafafa',
-        muted: 'rgba(255,255,255,0.5)',
-        subtle: 'rgba(255,255,255,0.25)',
-        accent: '#10b981',
+        surface: '#ffffff',
+        'surface-raised': '#ffffff',
+        ink: '#1e293b',
+        muted: '#64748b',
+        subtle: '#94a3b8',
+        accent: '#7c3aed',
       },
       fontFamily: {
         sans: [

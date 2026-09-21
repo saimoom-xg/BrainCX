@@ -195,7 +195,7 @@ export function VoiceAgent() {
           onClick={handleClick}
           aria-label={active ? 'End conversation' : 'Start conversation'}
         >
-          <div className="orb-icon" style={{ color: active ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)' }}>
+          <div className="orb-icon" style={{ color: 'rgba(255,255,255,0.95)' }}>
             {active ? <StopIcon /> : getOrbIcon(state)}
           </div>
         </button>
@@ -216,21 +216,21 @@ export function VoiceAgent() {
 
       {/* Error message */}
       {error && (
-        <p className="animate-fade-in-up max-w-xs text-center text-sm leading-6 text-red-400/80">
+        <p className="animate-fade-in-up max-w-xs text-center text-sm leading-6 text-red-600/80">
           {error}
         </p>
       )}
 
       {/* Ended message */}
       {state === 'ended' && !error && (
-        <p className="animate-fade-in-up text-center text-sm text-muted">
+        <p className="animate-fade-in-up text-center text-sm text-slate-500">
           Tap the orb to start a new conversation.
         </p>
       )}
 
       {/* Idle helper text */}
       {state === 'idle' && (
-        <p className="max-w-[240px] text-center text-xs leading-5 text-subtle">
+        <p className="max-w-[240px] text-center text-xs leading-5 text-slate-400">
           Your browser will ask for microphone access.
         </p>
       )}
