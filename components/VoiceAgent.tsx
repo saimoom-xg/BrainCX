@@ -146,7 +146,11 @@ export function VoiceAgent() {
       client.on('call-end', () => setState('ended'));
       client.on('speech-start', () => setState('speaking'));
       client.on('speech-end', () => setState('listening'));
-      client.on('error', () => {
+      client.on('message', (msg) => {
+        console.log('[vapi] message:', msg);
+      });
+      client.on('error', (err) => {
+        console.error('[vapi] error:', err);
         setState('error');
         setError('Voice connection interrupted. Tap to try again.');
       });

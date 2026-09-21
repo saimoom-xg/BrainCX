@@ -3,48 +3,66 @@ import { checkAvailability } from '@/lib/calendar';
 import { createBooking } from '@/lib/calendar';
 
 /**
- * Vapi Server URL handler.
+ * Vapi Server URL Webhook Handler.
  *
- * Vapi sends POST requests to this endpoint whenever the assistant triggers
- * a tool call (e.g. check_calendar_availability, create_calendar_booking).
- *
- * Request format from Vapi:
- * {
- *   "message": {
- *     "type": "tool-calls",
- *     "toolCalls": [{ "id": "...", "function": { "name": "...", "arguments": {...} } }]
- *   }
- * }
- *
- * Expected response:
- * {
- *   "results": [{ "toolCallId": "...", "result": "..." }]
- * }
+ * Handles tool calls sent by Vapi when an assistant invokes a tool.
+ * Supports all payload variations: `toolCallList`, `toolCalls`, `toolWithToolCallList`.
  */
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const message = body?.message;
+    const body = await request.json().catch(() => ({}));
+    const message = body?.message || body;
 
-    // Only handle tool-calls messages; acknowledge others with 200
-    if (!message || message.type !== 'tool-calls') {
-      return NextResponse.json({}, { status: 200 });
+    console.log('[vapi/server-url] Received type:', message?.type);
+
+    // If not a tool call (e.g. status-update, transcript, conversation-update), return 200 immediately
+    if (message?.type && message.type !== 'tool-calls') {
+      return NextResponse.json({ received: true }, { status: 200 });
     }
 
-    const toolCalls: Array<{
-      id: string;
-      type: string;
-      function: { name: string; arguments: Record<string, string> };
-    }> = message.toolCalls ?? message.toolCallList ?? [];
+    // Extract tool calls from any known Vapi structure
+    const rawList: any[] =
+      message?.toolCallList ||
+      message?.toolCalls ||
+      message?.toolWithToolCallList ||
+      body?.toolCallList ||
+      body?.toolCalls ||
+      [];
+
+    if (!rawList.length) {
+      console.warn('[vapi/server-url] No tool calls found in message:', JSON.stringify(body));
+      return NextResponse.json({ results: [] }, { status: 200 });
+    }
 
     const results = await Promise.all(
-      toolCalls.map(async (toolCall) => {
-        const fnName = toolCall.function.name;
-        // Vapi may send arguments as a string or parsed object
-        const args =
-          typeof toolCall.function.arguments === 'string'
-            ? JSON.parse(toolCall.function.arguments)
-            : toolCall.function.arguments;
+      rawList.map(async (item: any) => {
+        const rawCall = item?.toolCall || item;
+        const toolCallId = rawCall?.id || item?.id || 'unknown';
+        const fnName =
+          rawCall?.function?.name ||
+          rawCall?.name ||
+          item?.function?.name ||
+          item?.name ||
+          '';
+
+        let args =
+          rawCall?.function?.arguments ??
+          rawCall?.arguments ??
+          rawCall?.parameters ??
+          item?.function?.arguments ??
+          item?.arguments ??
+          item?.parameters ??
+          {};
+
+        if (typeof args === 'string') {
+          try {
+            args = JSON.parse(args);
+          } catch {
+            args = {};
+          }
+        }
+
+        console.log(`[vapi/server-url] Executing "${fnName}" with args:`, JSON.stringify(args));
 
         let result: unknown;
 
@@ -54,29 +72,33 @@ export async function POST(request: Request) {
           } else if (fnName === 'create_calendar_booking') {
             result = await createBooking(args);
           } else {
-            result = { error: `Unknown tool: ${fnName}` };
+            console.warn(`[vapi/server-url] Unknown tool name: "${fnName}"`);
+            result = {
+              success: false,
+              message: `Tool "${fnName}" is not supported.`,
+            };
           }
-        } catch (err) {
-          console.error(`[vapi/server-url] Tool "${fnName}" error:`, err);
+        } catch (err: any) {
+          console.error(`[vapi/server-url] Error executing "${fnName}":`, err);
           result = {
             success: false,
-            message: `Tool "${fnName}" encountered an error.`,
+            message: `Execution failed: ${err?.message || 'internal error'}`,
           };
         }
 
+        console.log(`[vapi/server-url] Result for "${fnName}":`, JSON.stringify(result));
+
         return {
-          toolCallId: toolCall.id,
+          toolCallId,
           result: typeof result === 'string' ? result : JSON.stringify(result),
         };
       }),
     );
 
-    return NextResponse.json({ results });
-  } catch (err) {
-    console.error('[vapi/server-url] Failed to process request:', err);
-    return NextResponse.json(
-      { error: 'Failed to process tool call.' },
-      { status: 500 },
-    );
+    return NextResponse.json({ results }, { status: 200 });
+  } catch (err: any) {
+    console.error('[vapi/server-url] Top-level handler error:', err);
+    // Even on unexpected error, return 200 with empty results so Vapi does not eject the call
+    return NextResponse.json({ results: [] }, { status: 200 });
   }
 }
