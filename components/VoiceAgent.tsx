@@ -146,8 +146,17 @@ export function VoiceAgent() {
       client.on('call-end', () => setState('ended'));
       client.on('speech-start', () => setState('speaking'));
       client.on('speech-end', () => setState('listening'));
-      client.on('message', (msg) => {
+      client.on('message', (msg: any) => {
         console.log('[vapi] message:', msg);
+        if (msg.type === 'transcript') {
+          console.log(`🎤 [${msg.role ?? 'speaker'}]:`, msg.transcript);
+        }
+        if (msg.type === 'tool-calls') {
+          console.log('🛠️ [Tool Calls Triggered]:', msg.toolCallList ?? msg.toolCalls);
+        }
+        if (msg.type === 'status-update') {
+          console.log('📡 [Status Update]:', msg.status, 'Reason:', msg.endedReason);
+        }
       });
       client.on('error', (err) => {
         console.error('[vapi] error:', err);
@@ -163,6 +172,7 @@ export function VoiceAgent() {
 
       await client.start(publicConfig.vapiAssistantId, {
         server: { url: serverEndpoint },
+        endCallPhrases: [],
       });
     } catch {
       setState('error');
