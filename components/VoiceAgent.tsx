@@ -152,7 +152,14 @@ export function VoiceAgent() {
       });
 
       setState('connecting');
-      await client.start(publicConfig.vapiAssistantId);
+
+      // Build assistant overrides — tell Vapi where to send tool calls
+      const siteUrl = publicConfig.siteUrl || window.location.origin;
+      const assistantOverrides: Record<string, unknown> = {
+        serverUrl: `${siteUrl}/api/vapi/server-url`,
+      };
+
+      await client.start(publicConfig.vapiAssistantId, assistantOverrides);
     } catch {
       setState('error');
       setError('Could not start voice session. Please try again.');
