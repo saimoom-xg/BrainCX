@@ -158,7 +158,6 @@ export function VoiceAgent() {
       const serverEndpoint = `${siteUrl}/api/vapi/server-url`;
 
       await client.start(publicConfig.vapiAssistantId, {
-        serverUrl: serverEndpoint,
         server: { url: serverEndpoint },
       });
     } catch {
